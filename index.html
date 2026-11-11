@@ -205,6 +205,10 @@ body.dragging-files::after {
   box-shadow: 0 1px 4px rgba(0,0,0,.3);
 }
 .thumb.selected { border-color: var(--primary); }
+.thumb.swap-selected {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 2px var(--accent);
+}
 .thumb.used::after {
   content: "";
   position: absolute; inset: 0;
@@ -218,6 +222,42 @@ body.dragging-files::after {
   display: none; place-items: center; line-height: 1; padding: 0;
 }
 .thumb:hover .x { display: grid; }
+.thumb-arrows {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  z-index: 2;
+}
+.thumb-arrow-btn {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.95);
+  color: var(--ink);
+  font-size: 12px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  transition: all 0.15s ease;
+}
+.thumb-arrow-btn:hover:not(:disabled) {
+  background: #fff;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.25);
+  transform: scale(1.05);
+}
+.thumb-arrow-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+.thumb-arrow-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
 </style>
 <style>
 
@@ -1894,8 +1934,13 @@ function renderPool() {
   const used = usedPhotoIds();
   const selectedAt = new Map(state.selectedIds.map((id, i) => [id, i + 1]));
   for (const p of state.photos) {
+    const selectedIndex = state.selectedIds.indexOf(p.id);
+    const isSelected = selectedIndex >= 0;
     const el = document.createElement("div");
-    el.className = "thumb" + (selectedAt.has(p.id) ? " selected" : "") + (used.has(p.id) ? " used" : "");
+    el.className = "thumb" + (isSelected ? " selected" : "") + (used.has(p.id) ? " used" : "");
+    if (isSelected && state.swapSelectIndex === selectedIndex) {
+      el.classList.add("swap-selected");
+    }
     el.title = p.name;
     const img = document.createElement("img");
     img.alt = p.name;
@@ -1905,11 +1950,41 @@ function renderPool() {
     name.textContent = p.name;
     el.appendChild(img);
     el.appendChild(name);
-    if (selectedAt.has(p.id)) {
+    if (isSelected) {
       const b = document.createElement("div");
       b.className = "badge";
-      b.textContent = String(selectedAt.get(p.id));
+      b.textContent = String(selectedIndex + 1);
       el.appendChild(b);
+      
+      // Add arrow buttons for selected photos
+      const arrows = document.createElement("div");
+      arrows.className = "thumb-arrows";
+      
+      const btnLeft = document.createElement("button");
+      btnLeft.className = "thumb-arrow-btn";
+      btnLeft.type = "button";
+      btnLeft.textContent = "◀";
+      btnLeft.title = "往前移";
+      btnLeft.disabled = selectedIndex === 0;
+      btnLeft.addEventListener("click", (e) => { 
+        e.stopPropagation(); 
+        movePhoto(selectedIndex, -1); 
+      });
+      
+      const btnRight = document.createElement("button");
+      btnRight.className = "thumb-arrow-btn";
+      btnRight.type = "button";
+      btnRight.textContent = "▶";
+      btnRight.title = "往後移";
+      btnRight.disabled = selectedIndex === state.selectedIds.length - 1;
+      btnRight.addEventListener("click", (e) => { 
+        e.stopPropagation(); 
+        movePhoto(selectedIndex, 1); 
+      });
+      
+      arrows.appendChild(btnLeft);
+      arrows.appendChild(btnRight);
+      el.appendChild(arrows);
     }
     const x = document.createElement("button");
     x.className = "x";
@@ -1918,7 +1993,27 @@ function renderPool() {
     x.textContent = "×";
     x.addEventListener("click", (e) => { e.stopPropagation(); removePhoto(p.id); });
     el.appendChild(x);
-    el.addEventListener("click", () => toggleSelect(p.id));
+    
+    el.addEventListener("click", () => {
+      if (isSelected) {
+        // Tap-to-swap for selected photos
+        if (state.swapSelectIndex === selectedIndex) {
+          // Cancel selection
+          state.swapSelectIndex = -1;
+          renderPool();
+        } else if (state.swapSelectIndex >= 0) {
+          // Swap with previously selected photo
+          swapPhotos(state.swapSelectIndex, selectedIndex);
+        } else {
+          // Start swap selection
+          state.swapSelectIndex = selectedIndex;
+          renderPool();
+        }
+      } else {
+        // Toggle select for unselected photos
+        toggleSelect(p.id);
+      }
+    });
     box.appendChild(el);
   }
 }
