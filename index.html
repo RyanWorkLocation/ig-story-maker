@@ -281,22 +281,68 @@ body.dragging-files::after {
 .picked.empty { align-items: center; justify-content: center; color: var(--muted); font-size: 12.5px; }
 .pick {
   position: relative; width: 86px; height: 86px;
-  border-radius: 10px; overflow: hidden; background: #ddd;
-  border: 1px solid var(--line);
-  cursor: grab;
+  border-radius: 10px; overflow: visible; background: #ddd;
+  border: 2px solid var(--line);
+  cursor: pointer;
+  transition: border-color 0.2s ease;
 }
-.pick img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+.pick.swap-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.pick img { 
+  width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none;
+  border-radius: 8px;
+}
 .pick .n {
   position: absolute; top: 4px; left: 4px;
   width: 18px; height: 18px; border-radius: 50%;
   background: var(--primary); color: #fff; font-size: 11px; font-weight: 800;
   display: grid; place-items: center;
+  z-index: 2;
 }
 .pick .rm {
   position: absolute; top: 3px; right: 3px;
   width: 18px; height: 18px; border: 0; border-radius: 50%;
   background: rgba(0,0,0,.55); color: #fff; font-size: 11px;
   display: grid; place-items: center; padding: 0;
+  z-index: 3;
+}
+.pick-arrows {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  z-index: 2;
+}
+.arrow-btn {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.95);
+  color: var(--ink);
+  font-size: 12px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+  transition: all 0.15s ease;
+}
+.arrow-btn:hover:not(:disabled) {
+  background: #fff;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.2);
+  transform: scale(1.05);
+}
+.arrow-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+.arrow-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 .pick.drag { opacity: .45; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -707,6 +753,14 @@ body.dragging-files::after {
           </div>
 
           <div class="section">
+            <span class="label">文字大小</span>
+            <div class="row" style="gap:12px;align-items:center">
+              <input type="range" id="textScaleSlider" min="0.6" max="1.6" step="0.05" value="1" style="flex:1" aria-label="文字大小">
+              <span id="textScaleVal" style="font-size:13px;color:var(--muted);min-width:45px">100%</span>
+            </div>
+          </div>
+
+          <div class="section">
             <label class="label" for="noteInput">備註（選填，會顯示在價格下方）</label>
             <input class="field" id="noteInput" placeholder="例如商品名稱或其他說明" maxlength="40">
           </div>
@@ -907,6 +961,8 @@ const state = {
   customSizes: [],
   price: "",
   note: "",
+  textScale: 1.0,
+  swapSelectIndex: -1,
   textPos: null,
   textColorMode: "white",
   fontId: "huninn",
@@ -1100,6 +1156,7 @@ async function persistState() {
     customSizes: state.customSizes,
     price: state.price,
     note: state.note,
+    textScale: state.textScale,
     textPos: state.textPos,
     textColorMode: state.textColorMode,
     editingId: state.editingId,
@@ -1605,15 +1662,16 @@ function photoById(id) {
 }
 
 function textLinesOf(story) {
+  const scale = story.textScale != null ? story.textScale : 1.0;
   const lines = [];
   if (story.sizes && story.sizes.length) {
-    lines.push({ text: "尺寸：" + story.sizes.join(" / "), size: 62 });
+    lines.push({ text: "尺寸：" + story.sizes.join(" / "), size: Math.round(62 * scale) });
   }
   if (story.price !== "" && story.price != null) {
-    lines.push({ text: "價格：" + story.price, size: 62 });
+    lines.push({ text: "價格：" + story.price, size: Math.round(62 * scale) });
   }
   if (story.note && String(story.note).trim()) {
-    lines.push({ text: String(story.note).trim(), size: 40 });
+    lines.push({ text: String(story.note).trim(), size: Math.round(40 * scale) });
   }
   return lines;
 }
@@ -1756,6 +1814,7 @@ function draftStory() {
     sizes: state.sizes.slice(),
     price: state.price,
     note: state.note,
+    textScale: state.textScale,
     textPos: state.textPos,
     textColorMode: state.textColorMode,
     logoEnabled: state.logo.enabled,
@@ -1864,19 +1923,46 @@ function renderPool() {
   }
 }
 
+function swapPhotos(idx1, idx2) {
+  if (idx1 < 0 || idx2 < 0 || idx1 >= state.selectedIds.length || idx2 >= state.selectedIds.length || idx1 === idx2) return;
+  const ids = state.selectedIds.slice();
+  [ids[idx1], ids[idx2]] = [ids[idx2], ids[idx1]];
+  state.selectedIds = ids;
+  ensureCrops(ids.length);
+  if (state.crops && state.crops.length > Math.max(idx1, idx2)) {
+    [state.crops[idx1], state.crops[idx2]] = [state.crops[idx2], state.crops[idx1]];
+  }
+  state.swapSelectIndex = -1;
+  afterDraftChange();
+}
+
+function movePhoto(fromIdx, direction) {
+  const toIdx = fromIdx + direction;
+  if (toIdx < 0 || toIdx >= state.selectedIds.length) return;
+  const ids = state.selectedIds.slice();
+  [ids[fromIdx], ids[toIdx]] = [ids[toIdx], ids[fromIdx]];
+  state.selectedIds = ids;
+  ensureCrops(ids.length);
+  if (state.crops && state.crops.length > Math.max(fromIdx, toIdx)) {
+    [state.crops[fromIdx], state.crops[toIdx]] = [state.crops[toIdx], state.crops[fromIdx]];
+  }
+  afterDraftChange();
+}
+
 function renderPicked() {
   const el = $("picked");
   el.innerHTML = "";
   if (!state.selectedIds.length) {
     el.className = "picked empty";
     el.textContent = "請從照片庫點選 " + state.photoCount + " 張照片";
+    state.swapSelectIndex = -1;
     return;
   }
   el.className = "picked";
   state.selectedIds.forEach((id, i) => {
     const p = photoById(id);
     const card = document.createElement("div");
-    card.className = "pick";
+    card.className = "pick" + (state.swapSelectIndex === i ? " swap-selected" : "");
     card.draggable = true;
     card.dataset.id = id;
     const img = document.createElement("img");
@@ -1891,9 +1977,44 @@ function renderPicked() {
     rm.textContent = "×";
     rm.title = "移出此則";
     rm.addEventListener("click", (e) => { e.stopPropagation(); removeSelected(id); });
+    
+    const arrows = document.createElement("div");
+    arrows.className = "pick-arrows";
+    const btnLeft = document.createElement("button");
+    btnLeft.className = "arrow-btn";
+    btnLeft.type = "button";
+    btnLeft.textContent = "◀";
+    btnLeft.title = "往前移";
+    btnLeft.disabled = i === 0;
+    btnLeft.addEventListener("click", (e) => { e.stopPropagation(); movePhoto(i, -1); });
+    const btnRight = document.createElement("button");
+    btnRight.className = "arrow-btn";
+    btnRight.type = "button";
+    btnRight.textContent = "▶";
+    btnRight.title = "往後移";
+    btnRight.disabled = i === state.selectedIds.length - 1;
+    btnRight.addEventListener("click", (e) => { e.stopPropagation(); movePhoto(i, 1); });
+    arrows.appendChild(btnLeft);
+    arrows.appendChild(btnRight);
+    
     card.appendChild(img);
     card.appendChild(n);
     card.appendChild(rm);
+    card.appendChild(arrows);
+    
+    card.addEventListener("click", (e) => {
+      if (e.target === rm || e.target.classList.contains("arrow-btn")) return;
+      if (state.swapSelectIndex === i) {
+        state.swapSelectIndex = -1;
+        renderPicked();
+      } else if (state.swapSelectIndex >= 0) {
+        swapPhotos(state.swapSelectIndex, i);
+      } else {
+        state.swapSelectIndex = i;
+        renderPicked();
+      }
+    });
+    
     card.addEventListener("dragstart", (e) => {
       card.classList.add("drag");
       e.dataTransfer.setData("text/plain", String(i));
@@ -2084,6 +2205,7 @@ function snapshotDraft(id) {
     sizes: state.sizes.slice(),
     price: state.price,
     note: state.note,
+    textScale: state.textScale,
     textPos: state.textPos ? { x: state.textPos.x, y: state.textPos.y } : null,
     textColorMode: state.textColorMode,
     logoEnabled: state.logo.enabled,
@@ -2210,12 +2332,15 @@ function editStory(id) {
   state.sizes = s.sizes.slice();
   state.price = String(s.price);
   state.note = s.note || "";
+  state.textScale = s.textScale != null ? s.textScale : 1.0;
   state.textPos = s.textPos ? { x: s.textPos.x, y: s.textPos.y } : null;
   state.textColorMode = s.textColorMode || "white";
   state.crops = cloneCrops(s.crops);
   ensureCrops(state.selectedIds.length || state.photoCount);
   $("priceInput").value = state.price;
   $("noteInput").value = state.note;
+  $("textScaleSlider").value = String(state.textScale);
+  $("textScaleVal").textContent = Math.round(state.textScale * 100) + "%";
   afterDraftChange();
   renderQueue();
   toast("已載入，修改後請按「更新此則」");
@@ -3010,6 +3135,13 @@ function bindEvents() {
     schedulePreview();
     schedulePersist();
   });
+  $("textScaleSlider").addEventListener("input", (e) => {
+    const val = parseFloat(e.target.value);
+    state.textScale = val;
+    $("textScaleVal").textContent = Math.round(val * 100) + "%";
+    schedulePreview();
+    schedulePersist();
+  });
   $("noteInput").addEventListener("input", (e) => {
     state.note = e.target.value;
     schedulePreview();
@@ -3173,6 +3305,7 @@ async function restore() {
     state.customSizes = draft.customSizes || [];
     state.price = draft.price || "";
     state.note = draft.note || "";
+    state.textScale = draft.textScale != null ? draft.textScale : 1.0;
     state.textPos = draft.textPos || null;
     state.textColorMode = draft.textColorMode || "white";
     state.crops = cloneCrops(draft.crops);
@@ -3180,6 +3313,8 @@ async function restore() {
     state.editingId = draft.editingId && (queue || []).some((s) => s.id === draft.editingId) ? draft.editingId : null;
     $("priceInput").value = state.price;
     $("noteInput").value = state.note;
+    $("textScaleSlider").value = String(state.textScale);
+    $("textScaleVal").textContent = Math.round(state.textScale * 100) + "%";
   }
 
   state.queue = Array.isArray(queue) ? queue : [];
