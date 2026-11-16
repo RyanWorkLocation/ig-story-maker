@@ -732,7 +732,7 @@ body.dragging-files::after {
     <div class="mark">Cu</div>
     <div>
       <h1>chicubi.wear 限動拼圖工具</h1>
-      <p class="desktop-only">把照片拖進來，選 3 或 4 張、填尺寸與價格，一次產出 1080×1920 限動圖</p>
+      <p class="desktop-only">把照片拖進來，選 3~6 張、填尺寸與價格，一次產出 1080×1920 限動圖</p>
       <p class="mobile-only">選照片、填尺寸與價格，產出限動圖</p>
     </div>
   </div>
@@ -773,7 +773,7 @@ body.dragging-files::after {
       </div>
       <p class="pool-status" id="poolStatus" hidden></p>
       <div class="step-block mobile-only" id="step2">
-        <div class="step-hd"><span class="step-n">2</span> 點選 3 或 4 張</div>
+        <div class="step-hd"><span class="step-n">2</span> 點選 3~6 張</div>
         <div id="step2CountSlot"></div>
       </div>
       <div class="thumbs" id="thumbs"></div>
@@ -798,6 +798,8 @@ body.dragging-files::after {
               <div class="seg" id="countSeg">
                 <button type="button" data-count="3" class="on">3 張</button>
                 <button type="button" data-count="4">4 張</button>
+                <button type="button" data-count="5">5 張</button>
+                <button type="button" data-count="6">6 張</button>
               </div>
               <div class="seg" id="layoutSeg">
                 <button type="button" data-layout="top" class="on">上大下三</button>
@@ -1051,6 +1053,8 @@ const state = {
   selectedIds: [],
   photoCount: 3,
   layout4: "top",
+  layout5: "top3",
+  layout6: "grid",
   sizes: [],
   customSizes: [],
   price: "",
@@ -1249,6 +1253,8 @@ async function persistState() {
     selectedIds: state.selectedIds,
     photoCount: state.photoCount,
     layout4: state.layout4,
+    layout5: state.layout5,
+    layout6: state.layout6,
     sizes: state.sizes,
     customSizes: state.customSizes,
     price: state.price,
@@ -1629,6 +1635,60 @@ function layoutCells(kind) {
       { x: G * 3 + c1 + c2, y: by, w: c3, h: botH },
     ];
   }
+  if (kind === "5-top3") {
+    // Top 3 / Bottom 2
+    const topH = Math.round((H - G * 3) / 2);
+    const botH = H - G * 3 - topH;
+    const topC1 = Math.floor((W - G * 4) / 3);
+    const topC2 = topC1;
+    const topC3 = W - G * 4 - topC1 - topC2;
+    const botW = Math.round((W - G * 3) / 2);
+    const botW2 = W - G * 3 - botW;
+    const by = G * 2 + topH;
+    return [
+      { x: G, y: G, w: topC1, h: topH },
+      { x: G * 2 + topC1, y: G, w: topC2, h: topH },
+      { x: G * 3 + topC1 + topC2, y: G, w: topC3, h: topH },
+      { x: G, y: by, w: botW, h: botH },
+      { x: G * 2 + botW, y: by, w: botW2, h: botH },
+    ];
+  }
+  if (kind === "5-top2") {
+    // Top 2 / Bottom 3
+    const topH = Math.round((H - G * 3) / 2);
+    const botH = H - G * 3 - topH;
+    const topW = Math.round((W - G * 3) / 2);
+    const topW2 = W - G * 3 - topW;
+    const botC1 = Math.floor((W - G * 4) / 3);
+    const botC2 = botC1;
+    const botC3 = W - G * 4 - botC1 - botC2;
+    const by = G * 2 + topH;
+    return [
+      { x: G, y: G, w: topW, h: topH },
+      { x: G * 2 + topW, y: G, w: topW2, h: topH },
+      { x: G, y: by, w: botC1, h: botH },
+      { x: G * 2 + botC1, y: by, w: botC2, h: botH },
+      { x: G * 3 + botC1 + botC2, y: by, w: botC3, h: botH },
+    ];
+  }
+  if (kind === "6-grid") {
+    // 3x2 grid (top 3 / bottom 3)
+    const topH = Math.round((H - G * 3) / 2);
+    const botH = H - G * 3 - topH;
+    const c1 = Math.floor((W - G * 4) / 3);
+    const c2 = c1;
+    const c3 = W - G * 4 - c1 - c2;
+    const by = G * 2 + topH;
+    return [
+      { x: G, y: G, w: c1, h: topH },
+      { x: G * 2 + c1, y: G, w: c2, h: topH },
+      { x: G * 3 + c1 + c2, y: G, w: c3, h: topH },
+      { x: G, y: by, w: c1, h: botH },
+      { x: G * 2 + c1, y: by, w: c2, h: botH },
+      { x: G * 3 + c1 + c2, y: by, w: c3, h: botH },
+    ];
+  }
+  // 4-grid (fallback)
   const cellW = Math.round((W - G * 3) / 2);
   const cellW2 = W - G * 3 - cellW;
   const cellH = Math.round((H - G * 3) / 2);
@@ -1643,11 +1703,15 @@ function layoutCells(kind) {
 
 function currentLayoutKind() {
   if (state.photoCount === 3) return "3-top";
-  return state.layout4 === "grid" ? "4-grid" : "4-top";
+  if (state.photoCount === 4) return state.layout4 === "grid" ? "4-grid" : "4-top";
+  if (state.photoCount === 5) return state.layout5 === "top3" ? "5-top3" : "5-top2";
+  if (state.photoCount === 6) return "6-grid";
+  return "3-top";
 }
 
 function defaultTextPos(kind) {
   const cells = layoutCells(kind);
+  // Use first cell for most layouts, second cell for 4-grid
   const cell = kind === "4-grid" ? cells[1] : cells[0];
   return {
     x: Math.round(cell.x + cell.w - 200),
@@ -2294,15 +2358,38 @@ function updateLayoutUi() {
   document.querySelectorAll("#countSeg button").forEach((b) => {
     b.classList.toggle("on", Number(b.dataset.count) === state.photoCount);
   });
-  $("layoutSeg").style.display = state.photoCount === 4 ? "" : "none";
-  document.querySelectorAll("#layoutSeg button").forEach((b) => {
-    b.classList.toggle("on", b.dataset.layout === state.layout4);
-  });
-  $("layoutHint").textContent = state.photoCount === 3
-    ? "3 張時會做成上大圖、下兩張並排（接近你平常的 IG 拼圖）。"
-    : (state.layout4 === "grid"
+  
+  const layoutSeg = $("layoutSeg");
+  const n = state.photoCount;
+  
+  if (n === 3) {
+    layoutSeg.style.display = "none";
+    $("layoutHint").textContent = "3 張時會做成上大圖、下兩張並排（接近你平常的 IG 拼圖）。";
+  } else if (n === 4) {
+    layoutSeg.style.display = "";
+    layoutSeg.innerHTML = '<button type="button" data-layout="top">上大下三</button><button type="button" data-layout="grid">四宮格</button>';
+    document.querySelectorAll("#layoutSeg button").forEach((b) => {
+      b.classList.toggle("on", b.dataset.layout === state.layout4);
+    });
+    $("layoutHint").textContent = state.layout4 === "grid"
       ? "四宮格：四張照片平均分成 2×2。"
-      : "上大下三：上面一張商品大圖，下面三張並排。");
+      : "上大下三：上面一張商品大圖，下面三張並排。";
+  } else if (n === 5) {
+    layoutSeg.style.display = "";
+    layoutSeg.innerHTML = '<button type="button" data-layout="top3">上三下二</button><button type="button" data-layout="top2">上二下三</button>';
+    document.querySelectorAll("#layoutSeg button").forEach((b) => {
+      b.classList.toggle("on", b.dataset.layout === state.layout5);
+    });
+    $("layoutHint").textContent = state.layout5 === "top3"
+      ? "上三下二：上排三張並排，下排兩張並排。"
+      : "上二下三：上排兩張並排，下排三張並排。";
+  } else if (n === 6) {
+    layoutSeg.style.display = "none";
+    $("layoutHint").textContent = "6 張時會做成 3×2 網格（上下各三張並排）。";
+  } else {
+    layoutSeg.style.display = "none";
+    $("layoutHint").textContent = "";
+  }
 }
 
 function updateColorUi() {
@@ -2410,9 +2497,9 @@ async function removePhoto(id) {
 
 function setPhotoCount(n) {
   state.photoCount = n;
-  if (n === 3 && state.selectedIds.length > 3) {
-    state.selectedIds = state.selectedIds.slice(0, 3);
-    if (state.crops) state.crops = state.crops.slice(0, 3);
+  if (state.selectedIds.length > n) {
+    state.selectedIds = state.selectedIds.slice(0, n);
+    if (state.crops) state.crops = state.crops.slice(0, n);
   }
   ensureCrops(n);
   afterDraftChange();
@@ -2486,7 +2573,13 @@ async function renderQueue() {
     t.textContent = (i + 1) + ". 價格：" + s.price;
     const sub = document.createElement("div");
     sub.className = "s";
-    const layoutName = s.layout === "4-grid" ? "四宮格" : (s.layout === "4-top" ? "上大下三" : "上大下二");
+    const layoutName = 
+      s.layout === "4-grid" ? "四宮格" :
+      s.layout === "4-top" ? "上大下三" :
+      s.layout === "5-top3" ? "上三下二" :
+      s.layout === "5-top2" ? "上二下三" :
+      s.layout === "6-grid" ? "3×2網格" :
+      s.layout === "3-top" ? "上大下二" : "拼圖";
     sub.textContent = "尺寸：" + s.sizes.join(" / ") + (s.note ? "\n" + s.note : "") + "\n" + layoutName + "・" + s.photoIds.length + " 張";
     info.appendChild(t);
     info.appendChild(sub);
@@ -2562,8 +2655,20 @@ function editStory(id) {
   if (!s) return;
   state.editingId = s.id;
   state.selectedIds = s.photoIds.filter((pid) => photoById(pid)).slice();
-  state.photoCount = s.layout === "3-top" ? 3 : 4;
-  state.layout4 = s.layout === "4-grid" ? "grid" : "top";
+  // Detect photo count from layout
+  if (s.layout === "3-top") {
+    state.photoCount = 3;
+  } else if (s.layout === "4-grid" || s.layout === "4-top") {
+    state.photoCount = 4;
+    state.layout4 = s.layout === "4-grid" ? "grid" : "top";
+  } else if (s.layout === "5-top3" || s.layout === "5-top2") {
+    state.photoCount = 5;
+    state.layout5 = s.layout === "5-top3" ? "top3" : "top2";
+  } else if (s.layout === "6-grid") {
+    state.photoCount = 6;
+  } else {
+    state.photoCount = s.photoIds.length;
+  }
   state.sizes = s.sizes.slice();
   state.price = String(s.price);
   state.note = s.note || "";
@@ -2833,6 +2938,9 @@ function hitText(pt) {
 function cellLabels(kind) {
   if (kind === "4-grid") return ["左上", "右上", "左下", "右下"];
   if (kind === "4-top") return ["上圖", "左下", "中下", "右下"];
+  if (kind === "5-top3") return ["左上", "中上", "右上", "左下", "右下"];
+  if (kind === "5-top2") return ["左上", "右上", "左下", "中下", "右下"];
+  if (kind === "6-grid") return ["左上", "中上", "右上", "左下", "中下", "右下"];
   return ["上圖", "左下", "右下"];
 }
 
@@ -3317,7 +3425,11 @@ function bindEvents() {
   $("layoutSeg").addEventListener("click", (e) => {
     const b = e.target.closest("button[data-layout]");
     if (!b) return;
-    state.layout4 = b.dataset.layout;
+    if (state.photoCount === 4) {
+      state.layout4 = b.dataset.layout;
+    } else if (state.photoCount === 5) {
+      state.layout5 = b.dataset.layout;
+    }
     afterDraftChange();
   });
   $("colorSeg").addEventListener("click", (e) => {
@@ -3557,8 +3669,10 @@ async function restore() {
   if (draft) {
     const live = new Set(state.photos.map((p) => p.id));
     state.selectedIds = (draft.selectedIds || []).filter((id) => live.has(id));
-    state.photoCount = draft.photoCount === 4 ? 4 : 3;
+    state.photoCount = [3, 4, 5, 6].includes(draft.photoCount) ? draft.photoCount : 3;
     state.layout4 = draft.layout4 === "grid" ? "grid" : "top";
+    state.layout5 = draft.layout5 === "top2" ? "top2" : "top3";
+    state.layout6 = "grid";
     state.sizes = draft.sizes || [];
     state.customSizes = draft.customSizes || [];
     state.price = draft.price || "";
