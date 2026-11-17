@@ -2303,7 +2303,6 @@ function makeThumbEl(p) {
 function bindThumbChrome(el, p, selectedIndex, used) {
   const isSelected = selectedIndex >= 0;
   el.className = "thumb" + (isSelected ? " selected" : "") + (used.has(p.id) ? " used" : "");
-  if (isSelected && state.swapSelectIndex === selectedIndex) el.classList.add("swap-selected");
   el.title = p.name;
   el.dataset.id = p.id;
   const name = el.querySelector(".name");
@@ -2331,6 +2330,7 @@ function bindThumbChrome(el, p, selectedIndex, used) {
     if (!arrows) {
       arrows = document.createElement("div");
       arrows.className = "thumb-arrows";
+      arrows.addEventListener("click", (e) => e.stopPropagation());
       const btnLeft = document.createElement("button");
       btnLeft.className = "thumb-arrow-btn";
       btnLeft.type = "button";
@@ -2356,19 +2356,8 @@ function bindThumbChrome(el, p, selectedIndex, used) {
     arrows.remove();
   }
   el.onclick = () => {
-    if (isSelected) {
-      if (state.swapSelectIndex === selectedIndex) {
-        state.swapSelectIndex = -1;
-        renderPool();
-      } else if (state.swapSelectIndex >= 0) {
-        swapPhotos(state.swapSelectIndex, selectedIndex);
-      } else {
-        state.swapSelectIndex = selectedIndex;
-        renderPool();
-      }
-    } else {
-      toggleSelect(p.id);
-    }
+    if (isSelected) removeSelected(p.id);
+    else toggleSelect(p.id);
   };
 }
 
@@ -2398,19 +2387,6 @@ function renderPool() {
   });
 }
 
-function swapPhotos(idx1, idx2) {
-  if (idx1 < 0 || idx2 < 0 || idx1 >= state.selectedIds.length || idx2 >= state.selectedIds.length || idx1 === idx2) return;
-  const ids = state.selectedIds.slice();
-  [ids[idx1], ids[idx2]] = [ids[idx2], ids[idx1]];
-  state.selectedIds = ids;
-  ensureCrops(ids.length);
-  if (state.crops && state.crops.length > Math.max(idx1, idx2)) {
-    [state.crops[idx1], state.crops[idx2]] = [state.crops[idx2], state.crops[idx1]];
-  }
-  state.swapSelectIndex = -1;
-  afterDraftChange();
-}
-
 function movePhoto(fromIdx, direction) {
   const toIdx = fromIdx + direction;
   if (toIdx < 0 || toIdx >= state.selectedIds.length) return;
@@ -2430,14 +2406,13 @@ function renderPicked() {
   if (!state.selectedIds.length) {
     el.className = "picked empty";
     el.textContent = "請從照片庫點選 " + state.photoCount + " 張照片";
-    state.swapSelectIndex = -1;
     return;
   }
   el.className = "picked";
   state.selectedIds.forEach((id, i) => {
     const p = photoById(id);
     const card = document.createElement("div");
-    card.className = "pick" + (state.swapSelectIndex === i ? " swap-selected" : "");
+    card.className = "pick";
     card.draggable = true;
     card.dataset.id = id;
     const img = document.createElement("img");
@@ -2478,19 +2453,6 @@ function renderPicked() {
     card.appendChild(n);
     card.appendChild(rm);
     card.appendChild(arrows);
-    
-    card.addEventListener("click", (e) => {
-      if (e.target === rm || e.target.classList.contains("arrow-btn")) return;
-      if (state.swapSelectIndex === i) {
-        state.swapSelectIndex = -1;
-        renderPicked();
-      } else if (state.swapSelectIndex >= 0) {
-        swapPhotos(state.swapSelectIndex, i);
-      } else {
-        state.swapSelectIndex = i;
-        renderPicked();
-      }
-    });
     
     card.addEventListener("dragstart", (e) => {
       card.classList.add("drag");
@@ -2652,9 +2614,12 @@ function afterDraftChange() {
 
 function toggleSelect(id) {
   const idx = state.selectedIds.indexOf(id);
-  if (idx >= 0) return;
+  if (idx >= 0) {
+    removeSelected(id);
+    return;
+  }
   if (state.selectedIds.length >= state.photoCount) {
-    toast("這一則已經選滿 " + state.photoCount + " 張，請先移除一張再換。", true);
+    toast("這一則已經選滿 " + state.photoCount + " 張，請先取消一張再換。", true);
     return;
   }
   state.selectedIds.push(id);
@@ -2665,8 +2630,12 @@ function toggleSelect(id) {
 
 function removeSelected(id) {
   const idx = state.selectedIds.indexOf(id);
+  if (idx < 0) return;
   state.selectedIds = state.selectedIds.filter((x) => x !== id);
-  if (idx >= 0 && Array.isArray(state.crops)) state.crops.splice(idx, 1);
+  if (Array.isArray(state.crops)) state.crops.splice(idx, 1);
+  if (state.selectedCell >= state.selectedIds.length) {
+    state.selectedCell = Math.max(0, state.selectedIds.length - 1);
+  }
   ensureCrops(Math.max(state.selectedIds.length, state.photoCount));
   afterDraftChange();
 }
